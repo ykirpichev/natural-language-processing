@@ -2,12 +2,17 @@ import os
 from sklearn.metrics.pairwise import pairwise_distances_argmin
 
 from chatterbot import ChatBot
+from chatterbot.trainers import ChatterBotCorpusTrainer
+#python -m spacy download en
+
 from utils import *
 
 
 class ThreadRanker(object):
     def __init__(self, paths):
+        print("loading embeddings from {}".format(paths['WORD_EMBEDDINGS']))
         self.word_embeddings, self.embeddings_dim = load_embeddings(paths['WORD_EMBEDDINGS'])
+        print("loading tags embeddings from {}".format(paths['THREAD_EMBEDDINGS_FOLDER']))
         self.thread_embeddings_folder = paths['THREAD_EMBEDDINGS_FOLDER']
 
     def __load_embeddings_by_tag(self, tag_name):
@@ -23,8 +28,8 @@ class ThreadRanker(object):
 
         # HINT: you have already implemented a similar routine in the 3rd assignment.
         
-        question_vec = #### YOUR CODE HERE ####
-        best_thread = #### YOUR CODE HERE ####
+        question_vec = question_to_vec(question, self.word_embeddings, self.embeddings_dim) #### YOUR CODE HERE ####
+        best_thread = pairwise_distances_argmin(question_vec[None, :], thread_embeddings, metric='cosine')[0] #### YOUR CODE HERE ####
         
         return thread_ids[best_thread]
 
@@ -42,6 +47,7 @@ class DialogueManager(object):
         # Goal-oriented part:
         self.tag_classifier = unpickle_file(paths['TAG_CLASSIFIER'])
         self.thread_ranker = ThreadRanker(paths)
+        self.create_chitchat_bot()
 
     def create_chitchat_bot(self):
         """Initializes self.chitchat_bot with some conversational model."""
@@ -54,6 +60,14 @@ class DialogueManager(object):
         ########################
         #### YOUR CODE HERE ####
         ########################
+        self.chatbot = ChatBot('Ron Obvious')
+        
+        # Create a new trainer for the chatbot
+        trainer = ChatterBotCorpusTrainer(self.chatbot)
+        
+        # Train the chatbot based on the english corpus
+        trainer.train("chatterbot.corpus.english")
+
        
     def generate_answer(self, question):
         """Combines stackoverflow and chitchat parts using intent recognition."""
@@ -61,23 +75,32 @@ class DialogueManager(object):
         # Recognize intent of the question using `intent_recognizer`.
         # Don't forget to prepare question and calculate features for the question.
         
-        prepared_question = #### YOUR CODE HERE ####
-        features = #### YOUR CODE HERE ####
-        intent = #### YOUR CODE HERE ####
+        prepared_question = text_prepare(question) #### YOUR CODE HERE ####
+        features = self.tfidf_vectorizer.transform([prepared_question]) #### YOUR CODE HERE ####
+        intent = self.intent_recognizer.predict(features)[0] #### YOUR CODE HERE ####
 
         # Chit-chat part:   
         if intent == 'dialogue':
             # Pass question to chitchat_bot to generate a response.       
-            response = #### YOUR CODE HERE ####
+            response = self.chatbot.get_response(question) #### YOUR CODE HERE ####
             return response
         
         # Goal-oriented part:
         else:        
             # Pass features to tag_classifier to get predictions.
-            tag = #### YOUR CODE HERE ####
+            tag = self.tag_classifier.predict(features)[0] #### YOUR CODE HERE ####
             
             # Pass prepared_question to thread_ranker to get predictions.
-            thread_id = #### YOUR CODE HERE ####
+            thread_id = self.thread_ranker.get_best_thread(prepared_question, tag) #### YOUR CODE HERE ####
            
             return self.ANSWER_TEMPLATE % (tag, thread_id)
 
+def main():
+    dm = DialogueManager(RESOURCE_PATH)
+    print(dm.generate_answer("How Can I Make These Links Rotate in PHP"))
+    print(dm.generate_answer("How are you?"))
+    print(dm.generate_answer("What is your name?"))
+
+
+if __name__ == "__main__":
+    main()
